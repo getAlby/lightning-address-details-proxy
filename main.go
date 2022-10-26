@@ -47,6 +47,8 @@ func main() {
   e.Use(middleware.Logger())
   e.Use(middleware.Recover())
   e.Use(middleware.RequestID())
+  e.Use(middleware.CORS())
+
   // Setup exception tracking with Sentry if configured
   if c.SentryDSN != "" {
     if err = sentry.Init(sentry.ClientOptions{
