@@ -29,6 +29,35 @@ type LNResponse struct {
     Keysend interface{} `json:"keysend"`
 }
 
+
+func GetJSON(url string) (interface{}, *http.Response, error) {
+  response, err := http.Get(url)
+  if err != nil || response.StatusCode > 300  {
+    return nil, response, fmt.Errorf("No details: %s - %v", url, err)
+  } else {
+    defer response.Body.Close()
+    var j interface{}
+    err = json.NewDecoder(response.Body).Decode(&j)
+    if err != nil {
+      return nil, response, fmt.Errorf("Invalid JSON: %v", err)
+    } else {
+      return j, response, nil
+    }
+  }
+}
+
+func ToUrl(identifier string) (string, string, error) {
+  parts := strings.Split(identifier, "@")
+  if len(parts) != 2 {
+    return "", "", fmt.Errorf("Invalid lightning address %s", identifier)
+  }
+
+  keysendUrl := fmt.Sprintf("https://%s/.well-known/keysend/%s", parts[1], parts[0])
+  lnurlpUrl := fmt.Sprintf("https://%s/.well-known/lnurlp/%s", parts[1], parts[0])
+
+  return lnurlpUrl, keysendUrl, nil
+}
+
 func main() {
   c := &Config{}
 
@@ -65,41 +94,23 @@ func main() {
     responseBody := &LNResponse{}
 
     ln := c.QueryParam("ln")
-    parts := strings.Split(ln, "@")
-    if len(parts) != 2 {
+    lnurlpUrl, keysendUrl, err := ToUrl(ln)
+    if err != nil {
       return c.JSON(http.StatusBadRequest, &responseBody)
     }
 
-    keysendUrl := fmt.Sprintf("https://%s/.well-known/keysend/%s", parts[1], parts[0])
-    lnurlpUrl := fmt.Sprintf("https://%s/.well-known/lnurlp/%s", parts[1], parts[0])
-
-    keysendResponse, err := http.Get(keysendUrl)
-    if err != nil || keysendResponse.StatusCode > 300 {
-      e.Logger.Printf("No keysend details: %s - %v", ln, err)
+    lnurlp, lnurlpResponse, err := GetJSON(lnurlpUrl)
+    if err != nil {
+      e.Logger.Errorf("%v", err)
     } else {
-      defer keysendResponse.Body.Close()
-      var keysend interface{}
-      err = json.NewDecoder(keysendResponse.Body).Decode(&keysend)
-      if err != nil {
-        e.Logger.Printf("Invalid keysend JSON: %v", err)
-      } else {
-        responseBody.Keysend = keysend
-      }
+      responseBody.Lnurlp = lnurlp
     }
 
-
-    lnurlpResponse, err := http.Get(lnurlpUrl)
-    if err != nil || lnurlpResponse.StatusCode > 300  {
-      e.Logger.Printf("No lnurlp details: %s - %v", ln, err)
+    keysend, keysendResponse, err := GetJSON(keysendUrl)
+    if err != nil {
+      e.Logger.Errorf("%v", err)
     } else {
-      defer lnurlpResponse.Body.Close()
-      var lnurlp interface{}
-      err = json.NewDecoder(lnurlpResponse.Body).Decode(&lnurlp)
-      if err != nil {
-        e.Logger.Printf("Invalid lnurlp JSON: %v", err)
-      } else {
-        responseBody.Lnurlp = lnurlp
-      }
+      responseBody.Keysend = keysend
     }
 
     // if both requests resulted in errors return a bad request. something must be wrong with the ln address
